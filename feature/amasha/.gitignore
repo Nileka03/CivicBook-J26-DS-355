@@ -1,0 +1,18 @@
+# data - NDA, never commit
+*.xlsx
+*.xls
+!**/metrics/*.csv
+*.jsonl
+!translation/handwritten_test_template.xlsx
+dataset/
+dataset_v2/
+outputs/
+# model files
+*.pt
+*.bin
+*.safetensors
+routing-demo/model/
+routing-demo/data/
+# environment
+.venv/
+__pycache__/

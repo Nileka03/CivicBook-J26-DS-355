@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CivicBook Routing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Sinhala:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">CB</span>
+    <div>
+      <div class="brand-title">CivicBook</div>
+      <div class="brand-sub">Component 4 · Multi-Department Complaint Routing</div>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="citizen">Citizen</button>
+    <button class="tab" data-view="pipeline">Pipeline</button>
+    <button class="tab" data-view="LECO">LECO officer <span class="count" id="count-LECO"></span></button>
+    <button class="tab" data-view="MC">MC officer <span class="count" id="count-MC"></span></button>
+  </nav>
+</header>
+
+<main>
+  <!-- ============================================================ CITIZEN -->
+  <section class="view active" id="view-citizen">
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Submit a complaint</h2>
+        <p class="muted">Sinhala, English or both. One complaint can contain several issues.</p>
+        <textarea id="complaint" rows="7" placeholder="Type your complaint here…"></textarea>
+        <div class="examples">
+          <span class="muted small">Examples:</span>
+          <button class="chip" data-example="0">Sinhala · LECO + MC</button>
+          <button class="chip" data-example="1">English · two LECO issues</button>
+          <button class="chip" data-example="2">English · three issues</button>
+          <button class="chip" data-example="3">Sinhala · two MC issues</button>
+        </div>
+
+        <div class="fake-box">
+          <div>
+            <div class="label">Component 3 result <span class="tag">simulated</span></div>
+            <div class="muted small">In the full system the fake-detection component sets this flag.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="is-fake">
+            <span class="slider"></span>
+            <span class="switch-text" id="fake-text">is_fake = false</span>
+          </label>
+        </div>
+
+        <details class="settings">
+          <summary>Confidence thresholds</summary>
+          <div class="settings-row">
+            <label>Institution gate t
+              <input type="number" id="t-inst" min="0" max="1" step="0.05">
+            </label>
+            <label>Department gate t
+              <input type="number" id="t-dept" min="0" max="1" step="0.05">
+            </label>
+          </div>
+          <p class="muted small">Defaults come from routing_config.json. Raise them to see needs_verification flags.</p>
+        </details>
+
+        <button class="primary" id="submit">Route complaint</button>
+        <div class="error" id="submit-error"></div>
+      </div>
+
+      <div class="panel" id="citizen-result">
+        <h2>Where your complaint goes</h2>
+        <div class="empty">Submit a complaint to see how it is split and routed.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Recent complaints</h2>
+        <button class="ghost small" id="reset">Clear demo data</button>
+      </div>
+      <div id="history"></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ PIPELINE -->
+  <section class="view" id="view-pipeline">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>How the complaint was routed</h2>
+        <select id="pipeline-select"></select>
+      </div>
+      <div id="pipeline"></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ OFFICERS -->
+  <section class="view" id="view-LECO">
+    <div class="inbox-head">
+      <h2>LECO — Lanka Electricity Company</h2>
+      <button class="ghost small" data-refresh>Refresh</button>
+    </div>
+    <div class="inbox" id="inbox-LECO"></div>
+  </section>
+  <section class="view" id="view-MC">
+    <div class="inbox-head">
+      <h2>MC — Municipal Council</h2>
+      <button class="ghost small" data-refresh>Refresh</button>
+    </div>
+    <div class="inbox" id="inbox-MC"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

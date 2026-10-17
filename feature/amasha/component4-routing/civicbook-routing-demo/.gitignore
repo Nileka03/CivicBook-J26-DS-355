@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+model/*.pt
+model/*.json
+model/*.model
+data/

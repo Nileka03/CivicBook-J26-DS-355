@@ -1,0 +1,7 @@
+# private data and trained weights - never commit
+data/past_complaints.jsonl
+data/lexicon_si.txt
+models/*
+!models/README.md
+storage/
+eval_results.csv

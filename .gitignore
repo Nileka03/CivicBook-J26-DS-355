@@ -19,3 +19,10 @@ __pycache__/
 node_modules/
 dist/
 "@ | Out-File -Encoding utf8 .gitignore
+# RAG artifacts (contain complaint text)
+**/rag/
+*.npy
+*.joblib
+past_complaints.jsonl
+*.xlsx
+*.xls

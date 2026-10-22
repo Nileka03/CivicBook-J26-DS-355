@@ -45,11 +45,18 @@ civicbook-routing-demo/
 
    In VS Code press *Ctrl+Shift+P → Python: Select Interpreter* and choose `.venv`.
 
-4. **Copy the model.** From Kaggle, Version #1 (xlm-roberta-base) → *Output* → download `outputs/model/`.
+4. **Copy the model.** On Kaggle, open the **v4.1** run (the version whose `metrics/test_metrics.json` shows routing accuracy about 0.693) → *Output* → `model/`.
    Put these files directly in `model/`:
    - `best_model.pt`
-   - `routing_config.json`
    - `tokenizer.json`, `tokenizer_config.json` (plus `sentencepiece.bpe.model`, `special_tokens_map.json` if present)
+
+   `model/routing_config.json` is **already included**, so don't replace it. It sets:
+   - department threshold 0.85
+   - `postprocess` = `sentence_comma_split_0.7_0.85` (demo option)
+
+   For the reported configuration, change `postprocess` to `"none"`.
+
+   Then check everything with `python check_setup.py`.
 
 5. **Test the gate logic** (optional):
 

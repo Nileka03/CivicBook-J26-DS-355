@@ -238,7 +238,14 @@ function renderPipeline() {
       <div class="tokens">${tokens}</div></div></div>
     <div class="step"><div class="step-num">4</div><div>
       <h3>Segmentation into ${rec.num_sub_complaints} sub-complaint${rec.num_sub_complaints === 1 ? "" : "s"}</h3>
-      <div class="complaint-text">${highlightAll(rec.processed_text, rec.sub_complaints)}</div></div></div>
+      <div class="complaint-text">${highlightAll(rec.processed_text, rec.sub_complaints)}</div>
+      ${rec.merged_same_department ? `<p class="muted small">The model found ${rec.parts_found_by_model} parts; ${rec.merged_same_department} neighbouring part${rec.merged_same_department === 1 ? " was" : "s were"} merged because they go to the same institution and department (same issue).</p>` : ""}
+      ${(rec.split_at_full_stop || rec.split_at_comma) ? (() => {
+        const bits = [];
+        if (rec.split_at_full_stop) bits.push(`${rec.split_at_full_stop} full stop${rec.split_at_full_stop === 1 ? "" : "s"}`);
+        if (rec.split_at_comma) bits.push(`${rec.split_at_comma} comma${rec.split_at_comma === 1 ? "" : "s"}`);
+        return `<p class="muted small">The model found ${rec.parts_found_by_model} part${rec.parts_found_by_model === 1 ? "" : "s"}; split at ${bits.join(" and ")} because the text on each side is confidently about a different department.</p>`;
+      })() : ""}</div></div>
     <div class="step"><div class="step-num">5</div><div>
       <h3>Chained classification with confidence gates</h3>${gates}</div></div>
     <div class="step"><div class="step-num">6</div><div>

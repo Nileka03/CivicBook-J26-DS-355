@@ -13,6 +13,28 @@ import uuid
 import torch
 
 PEEL = set(".,!?;:\"'()[]{}…“”‘’|෴")
+SENTENCE_END = {".", "!", "?", "෴", "।"}
+COMMA = {",", ";", "،"}
+# a comma followed by one of these continues the same issue ("a fence, which is dangerous")
+CONTINUATION_WORDS = [
+    "which", "who", "whom", "whose", "where", "when", "that", "because", "since", "so", "therefore",
+    "hence", "thus", "as", "causing", "making", "due to", "even", "especially", "including", "but still",
+    "ඒ නිසා", "එම නිසා", "එබැවින්", "ඒ හේතුවෙන්", "එහි", "එය", "ඒක", "ඒකෙන්", "ඒ නිසාම",
+    "e nisa", "ekai", "eka",
+]
+# connector words at the start of a new part are left out of it
+LEAD_CONNECTORS = [
+    "ඒ වගේම", "ඒ වාගේම", "එමෙන්ම", "තවද", "ඊට අමතරව", "ඒ හැර", "ඒත් එක්කම", "සහ", "හා", "නමුත්", "ඒත්",
+    "also", "and also", "and", "in addition", "furthermore", "moreover", "apart from that", "besides that",
+    "as well as that", "but", "though", "although", "ewagema", "e wagema", "thawa", "ita amatharawa",
+]
+_norm = lambda w: unicodedata.normalize("NFC", w).lower().split()
+CONTINUATION_PATTERNS = sorted({tuple(_norm(w)) for w in CONTINUATION_WORDS}, key=len, reverse=True)
+LEAD_PATTERNS = sorted({tuple(_norm(w)) for w in LEAD_CONNECTORS}, key=len, reverse=True)
+
+
+def _starts_with(low, k, patterns):
+    return next((p for p in patterns if tuple(low[k:k + len(p)]) == p), None)
 
 # ------------------------------------------------------------------ pre-processing
 EMAIL_RE = re.compile(r"<?[\w.+-]+@[\w-]+(\.[\w-]+)+>?")
@@ -119,6 +141,15 @@ class RoutingEngine:
         self.max_len = cfg.get("max_len", 512)
         self.t_inst = float(cfg.get("threshold_institution", 0.5))
         self.t_dept = float(cfg.get("threshold_department", 0.5))
+        # design rule: two issues of the same department are ONE sub-complaint, so neighbouring
+        # parts with the same institution and department are merged after prediction.
+        # "postprocess" (chosen on validation in the notebook, saved in routing_config.json):
+        #   none | merge_same_department | merge_same_department_no_connector (default)
+        #   | sentence_split_<conf>  (e.g. sentence_split_0.7): split a part at a full stop when the
+        #     sentences on both sides are confidently about a different institution/department
+        #   | sentence_comma_split_<stop conf>_<comma conf>  (e.g. sentence_comma_split_0.7_0.85):
+        #     the same at full stops, and also at commas with the (stricter) comma confidence
+        self.postprocess = cfg.get("postprocess", "merge_same_department_no_connector")
 
     @torch.no_grad()
     def _run_model(self, tokens):
@@ -152,6 +183,77 @@ class RoutingEngine:
                 {i: {d: round(dept[i][k], 4) for k, d in enumerate(self.departments[i])}
                  for i in self.institutions})
 
+    @staticmethod
+    def _label(scored):
+        inst_s, dept_s = scored
+        inst = max(inst_s, key=inst_s.get)
+        return inst, max(dept_s[inst], key=dept_s[inst].get)
+
+    @staticmethod
+    def _confidence(scored):
+        inst_s, dept_s = scored
+        inst = max(inst_s, key=inst_s.get)
+        return min(inst_s[inst], max(dept_s[inst].values()))
+
+    def _sentence_split(self, hidden, first, last, spans, tokens, stop_conf, comma_conf=None):
+        """Inside each part, at every full stop (and comma, if comma_conf is set): if the text before
+        and after is CONFIDENTLY about a different institution/department, split there; otherwise
+        keep it together. Returns (spans, number of full-stop splits, number of comma splits)."""
+        low = [unicodedata.normalize("NFC", t).lower() for t in tokens]
+        words = lambda a, b: sum(any(ch.isalnum() for ch in t) for t in tokens[a:b])
+        out, n_stop, n_comma = [], 0, 0
+        for a, b in spans:
+            cuts = []                                    # (position, kind, confidence, min words)
+            for k in range(a, b - 1):
+                if tokens[k] in SENTENCE_END:
+                    cuts.append((k + 1, "stop", stop_conf, 3))
+                elif (comma_conf is not None and tokens[k] in COMMA
+                      and not _starts_with(low, k + 1, CONTINUATION_PATTERNS)):
+                    cuts.append((k + 1, "comma", comma_conf, 4))
+            if not cuts:
+                out.append((a, b)); continue
+            ends = [c[0] for c in cuts[1:]] + [b]
+            cur = (a, cuts[0][0]); cur_sc = self._scores(hidden, first, last, cur)
+            for (s0, kind, conf, min_words), e0 in zip(cuts, ends):
+                s1 = s0
+                while s1 < e0 and low[s1] in PEEL:
+                    s1 += 1
+                hit = _starts_with(low, s1, LEAD_PATTERNS)
+                if hit:                                  # "..., and they ..." -> "they ..."
+                    s1 += len(hit)
+                    while s1 < e0 and low[s1] in PEEL:
+                        s1 += 1
+                pc = (s1, e0)
+                sc = self._scores(hidden, first, last, pc) if s1 < e0 else None
+                if (cur_sc is not None and sc is not None
+                        and words(*cur) >= min_words and words(*pc) >= min_words
+                        and self._label(cur_sc) != self._label(sc)
+                        and self._confidence(cur_sc) >= conf and self._confidence(sc) >= conf):
+                    out.append(cur)
+                    n_stop += kind == "stop"; n_comma += kind == "comma"
+                    cur, cur_sc = pc, sc
+                else:
+                    cur = (cur[0], e0); cur_sc = self._scores(hidden, first, last, cur)
+            out.append(cur)
+        return out, n_stop, n_comma
+
+    def _merge_same_department(self, hidden, first, last, spans, tokens=None, only_without_connector=False):
+        """Neighbouring parts with the same top institution + department -> one part (re-scored).
+        only_without_connector: never merge across a connector WORD (සහ, and, ...)."""
+        out = []                                   # [(span, scores)]
+        for sp in spans:
+            sc = self._scores(hidden, first, last, sp)
+            gap_ok = True
+            if out and only_without_connector and tokens is not None:
+                gap_ok = all(t in PEEL for t in tokens[out[-1][0][1]:sp[0]])
+            if (out and gap_ok and sc is not None and out[-1][1] is not None
+                    and self._label(out[-1][1]) == self._label(sc)):
+                new = (out[-1][0][0], sp[1])
+                out[-1] = (new, self._scores(hidden, first, last, new))
+            else:
+                out.append((sp, sc))
+        return [s for s, _ in out], len(spans) - len(out)
+
     def route(self, complaint_text: str, is_fake: bool, complaint_id: str | None = None,
               t_inst: float | None = None, t_dept: float | None = None):
         t0 = time.perf_counter()
@@ -170,6 +272,19 @@ class RoutingEngine:
         fallback = not spans
         if fallback:                       # model found no sub-complaint: treat the whole text as one
             spans = [(0, len(tokens))]
+        model_spans = len(spans)
+        merged = split_at_stop = split_at_comma = 0
+        if self.postprocess.startswith("sentence_comma_split_"):
+            stop_conf, comma_conf = map(float, self.postprocess.split("_")[-2:])
+            spans, split_at_stop, split_at_comma = self._sentence_split(
+                hidden, first, last, spans, tokens, stop_conf, comma_conf)
+        elif self.postprocess.startswith("sentence_split_"):
+            conf = float(self.postprocess.rsplit("_", 1)[-1])
+            spans, split_at_stop, _ = self._sentence_split(hidden, first, last, spans, tokens, conf)
+        elif self.postprocess != "none" and len(spans) > 1:
+            spans, merged = self._merge_same_department(
+                hidden, first, last, spans, tokens,
+                only_without_connector=self.postprocess == "merge_same_department_no_connector")
 
         subs = []
         for n, (a, b) in enumerate(spans, 1):
@@ -216,6 +331,10 @@ class RoutingEngine:
             "bio_tags": tags,
             "thresholds": {"institution": t_inst, "department": t_dept},
             "segmentation_fallback": fallback,
+            "parts_found_by_model": model_spans,
+            "merged_same_department": merged,
+            "split_at_full_stop": split_at_stop,
+            "split_at_comma": split_at_comma,
             "truncated": truncated,
             "processing_ms": round((time.perf_counter() - t0) * 1000, 1),
             "submitted_at": time.strftime("%Y-%m-%d %H:%M:%S"),

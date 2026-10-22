@@ -1,0 +1,21 @@
+@"
+# private data - never commit
+*.pt
+*.pth
+*.zip
+labels.csv
+splits.csv
+test_predictions.csv
+**/lines/
+**/pages/
+**/raw_pdfs/
+**/storage/
+.env
+*.json.key
+# python / node
+__pycache__/
+.venv/
+.ipynb_checkpoints/
+node_modules/
+dist/
+"@ | Out-File -Encoding utf8 .gitignore
